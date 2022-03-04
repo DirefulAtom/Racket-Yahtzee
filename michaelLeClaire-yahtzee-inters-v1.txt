@@ -3,7 +3,7 @@ Language: Swindle; memory limit: 512 MB.
 ==========================================
   CMPU-101, Fall 2019
   12.03.19
-  Michael Bassham LeClaire
+  Michael LeClaire
 ==========================================
 
 Ones(1) Twos(2) Threes(3) Fours(4) Fives(5) Sixes(6) 3oK(7) 4oK(8) FHo(9) SmS(10) LgS(11) Chc(12) YHZ(13)
