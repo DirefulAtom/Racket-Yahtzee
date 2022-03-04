@@ -1,1 +1,7 @@
 # Racket-Yahtzee
+
+This program is written in a subset of Racket called Swindle, and allows the user to play the traditional game Yahtzee! within the console directly. To play, many of the functions used to directly affect the state of the game have short wrappers to allow the user to use more intuitive names during gameplay, although the gameplay still involves calling those funtions directly through those wrappers via the console to change the current state of play.
+
+The state of the game is also displayed in the console via a block of formatted text that prioritizes taking up as little space as possible while also displaying as much information as needed for the player to comprehend what they are doing, what they have done previously, what they can strategize doing for their next set of rolls.
+
+By the nature of the game itself, this game is intrinsically both multiplayer and single player capable, because two instances of the same program allow two people to play against each other inside the same set of rules which constitute the game. Therefore, the only need for a competition between two or more players is simply an equivalent number of instances to players, either on the same machine or different ones. Perhaps a future iteration of this project, if self-interest provides, would be to create some network code that would allow a host instance to communicate with a another instance and end both sessions and declare the winner once one of the involved instances reaches the win condition.
