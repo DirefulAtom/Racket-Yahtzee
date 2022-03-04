@@ -1,18 +1,15 @@
 ;; -----------------------------------------------------------------------------
-;; CMPU-101, Fall 2019
-;; Lab 11
-;; Michael Bassham LeClaire
+;; Michael LeClaire (preferred name used in college)
 ;; -----------------------------------------------------------------------------
 
 (load "asmt-helper.txt")
 
-(header "Lab 11" "Michael Bassham LeClaire")
+(header "Michael LeClaire")
 
 ;; =====================================
 ;;  CMPU-101, Fall 2019
-;;  Lecture notes for Dec. 3, 2019
 ;; =====================================
-;;  Implementing a small portion of the game of Yahtzee.
+;;  Implementing a the game of Yahtzee.
 ;;  The player has five 6-sided dice.  Each turn begins
 ;;  with the player rolling all five dice.  The player
 ;;  may then choose to roll some subset of the dice a
@@ -27,23 +24,7 @@
 ;;  four 4s as sixteen, and so on.  The goal is to accumulate
 ;;  the highest possible score.
 
-;;  Implemented for you in this file:
-;; -----------------------------------------------------------------------------
-;;     The "Model":                 The YAHTZ data structure     
-;;     A constructor/initializer:   MAKE-AND-INIT-YAHTZ          
-;;     A "View" function:           SHOW-YAHTZ                   
-
-;;  Functions that you must define (contracts given to you)
-;; -----------------------------------------------------------------------------
-;;     Some helper functions:       CAN-ROLL?, CAN-SCORE?,       
-;;                                  SLOT-EMPTY?, COMPUTE-SCORE
-;;     Two "Controller" functions:  ROLL-SOME!, SCORE!
-
-;; ===================================
-;;  Stuff Implemented for you!
-;; ===================================
-
-;;  YAHTZ -- The "Model"  (implemented for you!)
+;;  YAHTZ -- The "Model"
 ;; -------------------------------------------------------------------------
 ;;  SCORES:   A vector of length 7; however, only slots 1-6 are used.
 ;;              Slot 0 is ignored
