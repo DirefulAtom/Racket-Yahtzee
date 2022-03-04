@@ -2,8 +2,7 @@ Welcome to DrRacket, version 7.4 [3m].
 Language: Swindle; memory limit: 512 MB.
 ==========================================
   CMPU-101, Fall 2019
-  Lab 11
-  Michael Bassham LeClaire
+  Michael LeClaire
 ==========================================
 
 
