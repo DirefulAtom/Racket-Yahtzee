@@ -1,0 +1,563 @@
+;; -----------------------------------------------------------------------------
+;; CMPU-101, Fall 2019
+;; Lab 11
+;; Michael Bassham LeClaire
+;; -----------------------------------------------------------------------------
+
+(load "asmt-helper.txt")
+
+(header "Lab 11" "Michael Bassham LeClaire")
+
+;; =====================================
+;;  CMPU-101, Fall 2019
+;;  Lecture notes for Dec. 3, 2019
+;; =====================================
+;;  Implementing a small portion of the game of Yahtzee.
+;;  The player has five 6-sided dice.  Each turn begins
+;;  with the player rolling all five dice.  The player
+;;  may then choose to roll some subset of the dice a
+;;  second time; and then possibly a different subset a
+;;  third time.  The goal is to roll as many dice of one
+;;  kind as possible.  After rolling the dice up to three
+;;  times, the player must score the dice in one of the
+;;  empty slots in the scoresheet.  The scoresheet has slots
+;;  numbered 1 thru 6.  When scoring in slot 4, for example,
+;;  the score is computed by summing the occurrences of 4,
+;;  and ignoring the rest.  Thus, three 4s would count as 12;
+;;  four 4s as sixteen, and so on.  The goal is to accumulate
+;;  the highest possible score.
+
+;;  Implemented for you in this file:
+;; -----------------------------------------------------------------------------
+;;     The "Model":                 The YAHTZ data structure     
+;;     A constructor/initializer:   MAKE-AND-INIT-YAHTZ          
+;;     A "View" function:           SHOW-YAHTZ                   
+
+;;  Functions that you must define (contracts given to you)
+;; -----------------------------------------------------------------------------
+;;     Some helper functions:       CAN-ROLL?, CAN-SCORE?,       
+;;                                  SLOT-EMPTY?, COMPUTE-SCORE
+;;     Two "Controller" functions:  ROLL-SOME!, SCORE!
+
+;; ===================================
+;;  Stuff Implemented for you!
+;; ===================================
+
+;;  YAHTZ -- The "Model"  (implemented for you!)
+;; -------------------------------------------------------------------------
+;;  SCORES:   A vector of length 7; however, only slots 1-6 are used.
+;;              Slot 0 is ignored
+;;  TOTAL:    Current total score (sum of slots 1-6 in SCORES)
+;;  DICE:     A vector of 5 dice
+;;  NUM-ROLLS-LEFT:   A number from 0 to 3 (number of rolls left in current turn)
+;;  NUM-SCORES-LEFT:  A number from 0 to 6 (number of blank slots in scores vector)
+
+(define-struct yahtz
+  (scores upper-sum upper-bonus has-bonus? total dice num-rolls-left num-scores-left))
+
+;;  MAKE-AND-INIT-YAHTZ -- implemented for you!
+;; ----------------------------------------------------------------
+;;  INPUTS:  None
+;;  OUTPUT:  A fully initialized YAHTZ data structure
+
+(define make-and-init-yahtz
+  (lambda ()
+    ;; SCORES is a vector of length 7
+    (let ((scores (make-vector 14 '_)))
+      ;; But slot 0 is ignored
+      (vector-set! scores 0  'X)
+      (make-yahtz scores
+                  0                ;; total upper-score (so far)
+                  0                ;; bonus value if upper-score >= 63,
+                  ;; either == 0, or == 50
+                  #f               ;; if the bonus has been claimed
+                  0                ;; total score (so far)
+                  (make-vector 5)  ;; the dice vector
+                  3                ;; num-rolls-left
+                  13               ;; num-scores-left 
+                  ))))
+
+;;  SHOW-YAHTZ -- a "View" function (implemented for you!)
+;; --------------------------------------------------------------------
+;;  INPUT:   Y, a YAHTZ struct
+;;  OUTPUT:  None
+;;  SIDE EFFECT:  Prints out the contents of the YAHTZ
+;;    data structure in the Interactions Window
+
+(define show-yahtz
+  (lambda (y)
+    (newline)
+    (printf "==================================================~%")
+    (printf "        Dice: ~A | " (yahtz-dice y))
+    (printf "Rolls Left: ~A~%" (yahtz-num-rolls-left y))
+    (printf "  Cats:  1  2  3  4  5  6  | 3K 4K FH SS LS CH YZ")
+    (newline)
+    (printf "Scores: (")
+    (print-scores y)
+    (printf " )~%")
+    (printf "         1  2  3  4  5  6  | 7  8  9  10 11 12 13~%")
+    (printf "                 1-6Sum: ~A | Bonus: ~A~%" (yahtz-upper-sum y) (yahtz-upper-bonus y))
+    (printf "==================== Total: ~A ====================" (yahtz-total y))
+    (newline)))
+
+(define print-scores
+  (lambda (y)
+    (let ((counter 1))
+      (while (< counter 7)
+             (printf "~A  " (vector-ref (yahtz-scores y) counter))
+             (set! counter (+ counter 1)))
+      (printf "| ")
+      (while (< counter (- (vector-length (yahtz-scores y)) 1))
+             (printf "~A  " (vector-ref (yahtz-scores y) counter))
+             (set! counter (+ counter 1)))
+      (printf "~A" (vector-ref (yahtz-scores y) counter)))))
+
+;;  CAN-ROLL? -- helper function
+;; ---------------------------------
+;;  INPUT:   Y, a YAHTZ data structure
+;;  OUTPUT:  #t if it is a legal time to roll the dice
+
+(define can-roll?
+  (lambda (y)
+    ;; There must be at least one empty slot in the scoresheet
+    ;; and at least one roll left in the current turn
+    (and (> (yahtz-num-scores-left y) 0)
+         (> (yahtz-num-rolls-left  y) 0))
+    ))
+
+;;  CAN-SCORE? -- helper function
+;; -----------------------------------------
+;;  INPUT:  Y, a YAHTZ data structure
+;;  OUTPUT:  #t if it is a legal time to score the dice
+
+(define can-score?
+  (lambda (y)
+    ;; If there are 3 rolls left, it means the dice have not been
+    ;; rolled yet, so that wouldn't be a legal time to score.
+    ;; Also, if there are no empty slots in scores vector, then
+    ;; scoring is not allowed.
+    (and (< (yahtz-num-rolls-left  y) 3)
+         (> (yahtz-num-scores-left y) 0)))
+  )
+
+;;  SLOT-EMPTY? -- helper function
+;; --------------------------------------------------
+;;  INPUTS:  Y, a YAHTZ struct
+;;           SLOT, a number from 1 to 6
+;;  OUTPUT:  #t, if the specified SLOT in the scoresheet
+;;           has not yet received a score; #f otherwise.
+
+(define slot-empty?
+  (lambda (y slot)
+    ;; Output #t if the indicated SLOT is filled with the _ symbol
+    (eq? (vector-ref (yahtz-scores y) slot) '_)
+    ))
+
+;;  COMPUTE-SCORE -- helper function
+;; -------------------------------------------------
+;;  INPUTS:  Y, a YAHTZ struct
+;;           TARGET, a number from 1 to 6
+
+;;  OUTPUT:  The sum of all occurrences of TARGET in the vector
+;;           of DICE in the YAHTZ struct.  For example, if TARGET
+;;           is 5 and the DICE contain three occurrences of 5, then
+;;           the output would be 15.
+
+(define compute-score
+  (lambda (y target)
+    ;; Add up all the occurrences of TARGET in the DICE vector
+    (let* ((total 0))
+      (dotimes (i (vector-length (yahtz-dice y)))
+               (when (= target (vector-ref (yahtz-dice y) i))
+                 (set! total (+ total target))))
+      total)
+    ))
+
+;;  COMPUTE-SCORE-V2 -- helper function
+;; -------------------------------------------------
+;;  INPUTS:  Y, a YAHTZ struct
+;;           TARGET, a number from 7 to 13
+;;  OUTPUT:  The score for each special case, or -1 if it fails
+
+(define compute-score-v2
+  (lambda (y target)
+    ;; Add up all the occurrences of TARGET in the DICE vector
+    (cond
+      ;;3oK adds upp all the dice
+      ((= target 7)
+       (if (has-three-of-a-kind? (yahtz-dice y))
+           (dice-sum (yahtz-dice y))
+           -1))
+      ;;4oK adds up all the dice
+      ((= target 8)
+       (if (has-three-of-a-kind? (yahtz-dice y))
+           (dice-sum (yahtz-dice y))
+           -1))
+      ((= target 9)
+       (if (has-full-house? (yahtz-dice y))
+           25
+           -1))
+      ((= target 10)
+       (if (has-small-straight? (yahtz-dice y))
+           30
+           -1))
+      ((= target 11)
+       (if (has-large-straight? (yahtz-dice y))
+           40
+           -1))
+      ((= target 12)
+       (dice-sum (yahtz-dice y)))
+      ;;^^^ This one has no criteria, so no fail case
+      ((= target 13)
+       (if (has-yahtzee? (yahtz-dice y))
+           50
+           -1)))))
+
+;;  SCORE! --  a "Controller" function
+;; ----------------------------------------------
+;;  INPUTS:  Y, a YAHTZ struct
+;;           TARGET, a number from 1 to 13
+;;  OUTPUT:  Don't care
+;;  SIDE EFFECT:  If it is a legal time to score, and the
+;;    category TARGET is currently empty in the scoresheet,
+;;    then computes the score of the DICE in that category
+;;    and enters it into the scoresheet.
+
+(define score!
+  (lambda (y target)
+    (cond
+      ;; Case 1:  Legal time to score, and the slot is empty, cases 1 - 6
+      ((and (can-score? y)
+            (slot-empty? y target)
+            (< 0 target 7))
+       ;; Call COMPUTE-SCORE and insert that value into the appropriate
+       ;; slot of the SCORES vector.  And then update the values of
+       ;; NUM-ROLLS-LEFT and NUM-SCORES-LEFT in preparation for next turn
+       (let ((score (compute-score y target)))
+         ;;Set the specified slot of the scoresheet to the the computed score
+         (vector-set! (yahtz-scores y) target score)
+         ;;Prepare for next turn:
+         ;;Decrement the number of scores left
+         (set-yahtz-num-scores-left! y (- (yahtz-num-scores-left y) 1))
+         ;;Set the number of rolls left to 3 (start of new turn)
+         (set-yahtz-num-rolls-left! y 3)
+         (set-yahtz-upper-sum! y (+ (yahtz-upper-sum y) score))
+         (get-bonus? y)
+         (set-yahtz-total! y (+ (yahtz-total y) score))))
+      ;; Case 2:  Legal time to score, and the slot is empty, cases 7 - 13
+      ((and (can-score? y)
+            (slot-empty? y target)
+            (< 6 target 14))
+       ;; Call COMPUTE-SCORE and insert that value into the appropriate
+       ;; slot of the SCORES vector.  And then update the values of
+       ;; NUM-ROLLS-LEFT and NUM-SCORES-LEFT in preparation for next turn
+       (let ((score (compute-score-v2 y target)))
+         (cond
+           ((= score -1)
+            (printf "You scored 0 in this category.")
+            ;;Set the specified slot of the scoresheet to the the computed score (this case 0)
+            (vector-set! (yahtz-scores y) target 0)
+            ;;Prepare for next turn:
+            ;;Decrement the number of scores left
+            (set-yahtz-num-scores-left! y (- (yahtz-num-scores-left y) 1))
+            ;;Set the number of rolls left to 3 (start of new turn)
+            (set-yahtz-num-rolls-left! y 3))
+           (else             
+            ;;Set the specified slot of the scoresheet to the the computed score
+            (vector-set! (yahtz-scores y) target score)
+            ;;Prepare for next turn:
+            ;;Decrement the number of scores left
+            (set-yahtz-num-scores-left! y (- (yahtz-num-scores-left y) 1))
+            ;;Set the number of rolls left to 3 (start of new turn)
+            (set-yahtz-num-rolls-left! y 3)
+            (set-yahtz-total! y (+ (yahtz-total y) score))))))
+      ;; Case 3:  Not appropriate to score, or slot already filled
+      (else
+       (printf "Scoring error!~%")))))
+
+;;  ROLL-SOME! --  a "Controller" function
+;; -------------------------------------------------
+;;  INPUTS:  Y, a YAHTZ struct
+;;           ROLLER-VECK, a vector of length 5 containing 1s and/or 0s
+;;  OUTPUT:  None
+;;  SIDE EFFECT:  If it is a legal time to roll the dice, rolls the
+;;    subset of the DICE indicated by ROLLER-VECK (a 1 says "ROLL",
+;;    a 0 says "Don't Roll").  If it is the first roll, the player
+;;    *must* roll *all* of the dice!
+
+(define roll-some!
+  (lambda (y roller-veck)
+    (cond
+      ;; Case 1:  It is legal to roll the dice at this time
+      ((can-roll? y)
+       ;; If there are 3 rolls left, then must roll ALL of the dice.
+       ;; Otherwise, roll only the dice specified by ROLLER-VECK.
+       ;; And then decrement the NUM-ROLLS-LEFT
+       (if (= (yahtz-num-rolls-left y) 3)
+           (dotimes (i (vector-length (yahtz-dice y)))
+                    (vector-set! (yahtz-dice y) i (+ 1 (random 6))))
+           (dotimes (i (vector-length (yahtz-dice y)))
+                    (when (eq? (vector-ref roller-veck i) 1)
+                      (vector-set! (yahtz-dice y) i (+ 1 (random 6))))))
+       (set-yahtz-num-rolls-left! y (- (yahtz-num-rolls-left y) 1))
+       );; Case 2:  Rolling not allowed at this time!
+      (else
+       (printf "Rolling error!~%")))))
+
+
+(define random-yahtz-test
+  (lambda ()
+    ;; Create a new YAHTZ instance
+    (define yy (make-and-init-yahtz))
+    ;; Look at it
+    (show-yahtz yy)
+    ;; Then do 6 very quick turns!
+    ;;  Note:  I goes from 0 to 5
+    ;;         I+1 goes from 1 to 6
+    (dotimes (i 6)
+             ;; Roll the dice one time and then score in category i+1
+             (roll-some! yy #(1 1 1 1 1))
+             (show-yahtz yy)
+             (score! yy (+ i 1)))
+    ;; Look at the end result
+    (show-yahtz yy)
+    ))
+
+
+
+
+
+
+;; -----------------------------------------------------------------------
+;; COMPUTE-HISTOGRAM
+;; -----------------------------------------------------------------------
+;; INPUT:  VECK-O-DICE, a vector of dice values (each 1 thru 6)
+;; OUTPUT: A vector of length 7, where the ith slot contains
+;;         the number of occurances of i in VECK-O-DICE.
+;;         (The 0th slot of the output vector is ignored.)
+;; -----------------------------------------------------------------------
+
+(define compute-histogram
+  (lambda (veck-o-dice)
+    (let ((hist-veck (make-vector 7 0)))
+      (dotimes (i (vector-length veck-o-dice))
+               ;;Value of ith die, also will be the corrosponding slot of hist-veck
+               (let ((die (vector-ref veck-o-dice i)))
+                 (vector-set! hist-veck die (+ 1 (vector-ref hist-veck die)))))
+      hist-veck)))
+
+;; --------------------------------------------------------------------------
+;; CONTAINS-VECT
+;; --------------------------------------------------------------------------
+;; INPUT:  VECK, any vector
+;;         ELT, any data
+;; OUTPUT: Boolean value of whether VECK contains ELT
+; --------------------------------------------------------------------------
+
+(define contains-vect
+  (lambda (veck elt)
+    (let* ((found #f))
+      (dotimes (i (vector-length veck))
+               (when (eq? elt (vector-ref veck i))
+                 (set! found #t)))
+      found)))
+
+;; --------------------------------------------------------------------------
+;; HAS-FULL-HOUSE?
+;; --------------------------------------------------------------------------
+;; INPUT:  VECK-O-DICE, a vector of 5 dice values
+;; OUTPUT: #t if VECK-O-DICE contains either:
+;;         2 of one kind and 3 of another or 5 of a kind
+;; --------------------------------------------------------------------------
+
+(define has-full-house?
+  (lambda (veck-o-dice)
+    (let* ((hist (compute-histogram veck-o-dice)))
+      (if (or (and (contains-vect hist 2)
+                   (contains-vect hist 3))
+              (contains-vect hist 5))
+          #t
+          #f))))
+
+;; --------------------------------------------------------------------------
+;; HAS-SMALL-STRAIGHT?
+;; --------------------------------------------------------
+;; INPUT:  VECK-O-DICE, a vector of five dice values
+;; OUTPUT: #t if the vector of dice contains all of the
+;;         numbers in {1,2,3,4}, {2,3,4,5} or {3,4,5,6},
+;;         in any order; #f otherwise.
+;; --------------------------------------------------------------------------
+
+(define has-small-straight?
+  (lambda (veck-o-dice)
+    (let* ((i 0) (counter 0) (hist (compute-histogram veck-o-dice)))
+      (while (and (< i (vector-length hist)) (not (= counter 4)))
+             (if (>= (vector-ref hist i) 1)
+                 (set! counter (+ 1 counter))
+                 (set! counter 0))
+             (set! i (+ i 1)))
+      (= counter 4))))
+
+;; ------------------------------------------------------------------------
+;; HAS-LARGE-STRAIGHT?
+;; ------------------------------------------------------------------------
+;; INPUT:  VECK-O-DICE, a vector of five dice values
+;; OUTPUT: #t if the vector of dice contains all of the
+;;         numbers in {1,2,3,4,5} or {2,3,4,5,6}, in any order;
+;;         #f otherwise.
+;; ------------------------------------------------------------------------
+
+(define has-large-straight?
+  (lambda (veck-o-dice)
+    ;; Compute a histogram and then check whether it
+    ;; equals #(0 1 1 1 1 1 0) or #(0 0 1 1 1 1 1)
+    (let ((histy (compute-histogram veck-o-dice)))
+      (or (equal? histy #(0 1 1 1 1 1 0))
+          (equal? histy #(0 0 1 1 1 1 1))))))
+
+;; ------------------------------------------------------------------------
+;; HAS-THREE-OF-A-KIND?
+;; ------------------------------------------------------------------------
+;; INPUT:  VECK-O-DICE, a vector of dice values
+;; OUTPUT: #t if VECK-O-DICE contains 3 or more of one kind
+;;         #f otherwise
+;; ------------------------------------------------------------------------
+
+(define has-three-of-a-kind?
+  (lambda (veck-o-dice)
+    ;; Use COMPUTE-HISTOGRAM ...
+    (let ((histy (compute-histogram veck-o-dice))
+          ;; BOOL will have the final output, intially false
+          (bool #f))
+      ;; Then walk through the histogram to see whether it contains an
+      ;;  entry that is 3 or more
+      (dotimes (i (vector-length histy))
+               (when (>= (vector-ref histy i) 3)
+                 (set! bool #t)))
+      ;; After the DOTIMES
+      bool
+      )))
+
+;; ------------------------------------------------------------------------
+;; HAS-FOUR-OF-A-KIND?
+;; ------------------------------------------------------------------------
+;; INPUT:  VECK-O-DICE, a vector of dice values
+;; OUTPUT: #t if VECK-O-DICE contains 4 or more of one kind
+;;         #f otherwise
+;; ------------------------------------------------------------------------
+
+(define has-four-of-a-kind?
+  (lambda (veck-o-dice)
+    ;; Use COMPUTE-HISTOGRAM ...
+    (let ((histy (compute-histogram veck-o-dice))
+          ;; BOOL will have the final output, intially false
+          (bool #f))
+      ;; Then walk through the histogram to see whether it contains an
+      ;;  entry that is 3 or more
+      (dotimes (i (vector-length histy))
+               (when (>= (vector-ref histy i) 4)
+                 (set! bool #t)))
+      ;; After the DOTIMES
+      bool
+      )))
+
+;; ------------------------------------------------------------------------
+;; HAS-YAHTZEE?
+;; ------------------------------------------------------------------------
+;; INPUT:  VECK-O-DICE, a vector of dice values
+;; OUTPUT: #t if VECK-O-DICE contains 5 of a kind
+;;         #f otherwise
+;; ------------------------------------------------------------------------
+
+(define has-yahtzee?
+  (lambda (veck-o-dice)
+    ;; Use COMPUTE-HISTOGRAM ...
+    (let ((histy (compute-histogram veck-o-dice))
+          ;; BOOL will have the final output, intially false
+          (bool #f))
+      ;; Then walk through the histogram to see whether it contains an
+      ;;  entry that is 3 or more
+      (dotimes (i (vector-length histy))
+               (when (>= (vector-ref histy i) 5)
+                 (set! bool #t)))
+      ;; After the DOTIMES
+      bool
+      )))
+
+;; ------------------------------------------------------------------------
+;; DICE-SUM
+;; ------------------------------------------------------------------------
+;; INPUT:  VECK-O-DICE, a vector of dice values
+;; OUTPUT: Returns the sum of all the dice
+;; ------------------------------------------------------------------------
+
+(define dice-sum
+  (lambda (veck-o-dice)
+    (let* ((acc 0))
+      (dotimes (i (vector-length veck-o-dice))
+               (set! acc (+ acc (vector-ref veck-o-dice i))))
+      acc)))
+
+;; ------------------------------------------------------------------------
+;;  ROLL-SHOW! --  a "Controller-Viewer" function
+;; ------------------------------------------------------------------------
+;;  INPUTS:  Y, a YAHTZ struct
+;;           ROLLER-VECK, a vector of length 5 containing 1s and/or 0s
+;;  OUTPUT:  None
+;;  SIDE EFFECT:  If it is a legal time to roll the dice, rolls the
+;;    subset of the DICE indicated by ROLLER-VECK (a 1 says "ROLL",
+;;    a 0 says "Don't Roll").  If it is the first roll, the player
+;;    *must* roll *all* of the dice!
+;;
+;;    Also prints the result of (show-yahtz y)
+;; ------------------------------------------------------------------------
+
+(define roll-show!
+  (lambda (y roller-veck)
+    (roll-some! y roller-veck)
+    (show-yahtz y)))
+
+;; ------------------------------------------------------------------------
+;;  SCORE-SHOW! --  a "Controller-Viewer" function
+;; ------------------------------------------------------------------------
+;;  INPUTS:  Y, a YAHTZ struct
+;;           TARGET, a number from 1 to 13
+;;  OUTPUT:  Don't care
+;;  SIDE EFFECT:  If it is a legal time to score, and the
+;;    category TARGET is currently empty in the scoresheet,
+;;    then computes the score of the DICE in that category
+;;    and enters it into the scoresheet.
+;;
+;;    Also prints the result of(show-yahtz y)
+;; ------------------------------------------------------------------------
+
+(define score-show!
+  (lambda (y target)
+    (score! y target)
+    (show-yahtz y)))
+
+;; ------------------------------------------------------------------------
+;; GET-BONUS?
+;; ------------------------------------------------------------------------
+;; INPUT:  Y, a YAHTZ struct
+;; OUTPUT: Boolean of whether the bonus can be applied or not
+;; SIDE-EFFECT: If #t, add 50 to BONUS and print so, else do nothing
+;; ------------------------------------------------------------------------
+
+(define get-bonus?
+  (lambda (y)
+    ;;If not claimed and can, claim the bonus
+    (when (and (>= (yahtz-upper-sum y) 63) (not (yahtz-has-bonus? y)))
+      (set-yahtz-upper-bonus! y 50)
+      (printf "You get the bonus!")
+      (set-yahtz-has-bonus?! #t)
+      (set-yahtz-total! y (+ (yahtz-total y) 50)))
+    ;;Otherwise, i.e. already claimed or can't, do nothing
+    ))
+
+
+(random-yahtz-test)
+(newline)
+(newline)
+(define x (make-and-init-yahtz))
+(show-yahtz x)
